@@ -1,5 +1,6 @@
 from compas.data import json_dumps
 from compas.data import json_loads
+import msgpack
 
 DEFAULT_TRANSPORT = None
 
@@ -32,9 +33,10 @@ def set_default_transport(transport):
 class Transport(object):
     """Defines the base interface for different transport implementations."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, codec=None, *args, **kwargs):
         super(Transport, self).__init__(*args, **kwargs)
         self._id_counter = 0
+        self.codec = codec or JsonMessageCodec()
 
     @property
     def id_counter(self):
@@ -43,6 +45,7 @@ class Transport(object):
         return self._id_counter
 
     def publish(self, topic, message):
+        self.codec.encode(message)
         pass
 
     def subscribe(self, topic, callback):
@@ -56,6 +59,150 @@ class Transport(object):
 
     def unadvertise(self, topic):
         pass
+
+
+class MessageCodec:
+    """
+    Base class for message codecs.
+
+    This class defines the interface for message encoding and decoding.
+    Subclasses should implement the `encode` and `decode` methods to handle
+    specific serialization formats.
+    """
+
+    def encode(self, message):
+        """
+        Encode a message into a serialized format.
+
+        Parameters
+        ----------
+        message : Message or dict
+            The message to encode.
+
+        Returns
+        -------
+        bytes or str
+            The encoded message.
+
+        Raises
+        ------
+        NotImplementedError
+            If the method is not implemented by a subclass.
+        """
+        raise NotImplementedError
+
+    def decode(self, message):
+        """
+        Decode a serialized message back into a `Message` object.
+
+        Parameters
+        ----------
+        message : bytes or str
+            The serialized message to decode.
+
+        Returns
+        -------
+        Message
+            The decoded message.
+
+        Raises
+        ------
+        NotImplementedError
+            If the method is not implemented by a subclass.
+        """
+        raise NotImplementedError
+
+
+class JsonMessageCodec(MessageCodec):
+    """
+    Message codec for JSON serialization.
+
+    This codec handles encoding and decoding messages using JSON format.
+    It supports messages that are instances of `Message` or dictionaries.
+    """
+
+    def encode(self, message):
+        """
+        Encode a message into a JSON string.
+
+        Parameters
+        ----------
+        message : Message or dict
+            The message to encode.
+
+        Returns
+        -------
+        str
+            The JSON-encoded message.
+        """
+        if isinstance(message, Message):
+            data = message.data
+        else:
+            data = message
+        return json_dumps(data)
+
+    def decode(self, message):
+        """
+        Decode a JSON string back into a `Message` object.
+
+        Parameters
+        ----------
+        message : bytes or str
+            The JSON-encoded message to decode.
+
+        Returns
+        -------
+        Message
+            The decoded message.
+        """
+        data = json_loads(message.decode("utf-8"))
+        return Message(**data)
+
+
+class BinaryMessageCodec(MessageCodec):
+    """
+    Message codec for binary serialization using MessagePack.
+
+    This codec handles encoding and decoding messages using MessagePack.
+    """
+
+    def encode(self, message):
+        """
+        Encode a message into a binary format using MessagePack.
+
+        Parameters
+        ----------
+        message : Message or dict
+            The message to encode.
+
+        Returns
+        -------
+        bytes
+            The MessagePack-encoded message.
+        """
+
+        if isinstance(message, Message):
+            data = message.data
+        else:
+            data = message
+        return msgpack.packb(data)
+
+    def decode(self, message):
+        """
+        Decode a MessagePack binary message back into a `Message` object.
+
+        Parameters
+        ----------
+        message : bytes
+            The MessagePack-encoded message to decode.
+
+        Returns
+        -------
+        Message
+            The decoded message.
+        """
+        data = msgpack.unpackb(message)
+        return Message(**data)
 
 
 class Message(object):
